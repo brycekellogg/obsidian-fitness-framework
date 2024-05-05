@@ -1,6 +1,7 @@
 import esbuild from "esbuild";
 import process from "process";
 import builtins from "builtin-modules";
+import inlineImportPlugin from 'esbuild-plugin-inline-import';
 
 const banner =
 `/*
@@ -15,11 +16,14 @@ const context = await esbuild.context({
 	banner: {
 		js: banner,
 	},
-	entryPoints: ["main.ts"],
+	entryPoints: ["src/main.ts"],
 	bundle: true,
+	platform: 'browser',
 	external: [
 		"obsidian",
 		"electron",
+		"node:fs",
+		"node:path",
 		"@codemirror/autocomplete",
 		"@codemirror/collab",
 		"@codemirror/commands",
@@ -33,11 +37,13 @@ const context = await esbuild.context({
 		"@lezer/lr",
 		...builtins],
 	format: "cjs",
-	target: "es2018",
 	logLevel: "info",
 	sourcemap: prod ? false : "inline",
 	treeShaking: true,
 	outfile: "main.js",
+	plugins: [
+		inlineImportPlugin()
+	],
 });
 
 if (prod) {
