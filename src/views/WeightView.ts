@@ -8,8 +8,6 @@ import {
 import * as templates from '../templates';
 
 import { Eta } from 'eta';
-import {parse} from 'csv-parse/browser/esm/sync';
-
 import Chart from 'chart.js/auto';
 import zoomPlugin from 'chartjs-plugin-zoom';
 import 'chartjs-adapter-luxon';
@@ -18,42 +16,13 @@ Chart.register(zoomPlugin);
 
 import {DateTime} from 'luxon';
 
-const DATE_FORMAT_LOG = 'yyyy-LL-dd hh:mm a'
-
-
-/**
- * A helper function for grouping an array of objects by a specific key.
- *
- * Example:
- *    [
- *        {a: 1, b: 2},
- *        {a: 1, b: 3},
- *        {a: 2, b, 4},
- *    ].groupBy('a');
- * returns:
- *    {
- *        1: [
- *            {a: 1, b: 2},
- *            {a: 1, b: 3},
- *        ],
- *        2: [
- *            {a: 2, b, 4},
- *        ],
- *    }
- */
-Array.prototype.groupBy = function(key) {
-    return this.reduce((acc, val) => {  // groupBy
-        (acc[val[key]] = acc[val[key]] || []).push(val);
-        return acc;
-    }, {})
-}
-
 
 /**
  *
  *
  */
 export default class WeightView {
+
 
     /**
      *
@@ -67,9 +36,7 @@ export default class WeightView {
         this.eta = new Eta();
         this.eta.loadTemplate("@view", templates.WeightView);
         this.eta.loadTemplate("@add", templates.Add);
-        this.eta.loadTemplate("@toml", templates.WeightToml);
     }
-
 
 
     /**
@@ -77,7 +44,34 @@ export default class WeightView {
      *
      **/
     async handleAddClick(event:MouseEvent) {
-        new ExampleModal(this.app, 186.5, (value) => {
+        new class extends Modal {
+            result: string;
+            onSubmit: (result: string) => void;
+
+            constructor(app: App, previousWeight, onSubmit: (result: string) => void) {
+                super(app);
+                this.onSubmit = onSubmit;
+                this.previousWeight = previousWeight;
+            }
+
+            onOpen() {
+                this.setTitle("Enter Weight");
+                const { contentEl } = this;
+                contentEl.createEl("input", {type: "number", cls: "weight-input", placeholder: this.previousWeight});
+                contentEl.addEventListener("keypress", _ => {
+                    if (_.key == 'Enter') {
+                        const value = contentEl.querySelector('input').value;
+                        this.close();
+                        if (value) this.onSubmit(Number(value).toFixed(1));
+                    }
+                });
+            }
+
+            onClose() {
+                let { contentEl } = this;
+                contentEl.empty();
+            }
+        }(this.app, 186.5, (value) => {
 
             let timestamp = DateTime.now().toISO();
             let output = `${timestamp},${value}\n`
@@ -89,34 +83,61 @@ export default class WeightView {
 
 
     /**
-     *
+     * TODO: we should cache somehow; only read in new data
      *
      *
      **/
-    async loadData() {
+    async loadData(start, end, groupBy = null) {
 
-        // Read in weight data
+        // Read in log files into strings
+        // & split into a list of records
+        const dataString = (await this.app.vault.cachedRead(this.logFile));
+        let data = dataString.trim().split('\n');
 
-        const dataString = (await this.app.vault.cachedRead(this.logFile))
-        let data = parse(dataString, {columns: true, skip_empty_lines: true})
-            .reduce((acc, row) => {
-                // Convert data types & get derived variables
-                const timestamp = DateTime.fromISO(row.timestamp);
-                const value = row.value;
-                const date = timestamp.startOf('day');
-                const time = timestamp.toISOTime();
+        // Find the starting record using binary search. Because
+        // the timestamp is stored using ISO-8601, lexicographical
+        // order equals chronological order, so we can compare
+        // strings directly. Once we find the start, slice the
+        // array to ignore the unneeded earlier records.
+        const needle = start.toISO();
+        var index;
+        let upper = data.length-1;
+        let lower = 0;
+        while (lower <= upper) {
+            index = Math.floor((upper+lower)/2);
+            upper = needle < data[index] ? index-1 : upper;
+            lower = needle > data[index] ? index+1 : lower;
+        }
+        data = data.slice(index);
 
-                (acc[date] = acc[date] || []).push({
-                    'timestamp': timestamp,
-                    'date': date,
-                    'time': time,
-                    'value': Number(value)
-                });
-                return acc;
-            }, {});
-        console.log(data);
+        // Tansform data
+        // ?????
+        let acc = {}
+        for (const row of data) {
 
-        data = Object.entries(data)
+            // Extract timestamp & value from "timestamp,value".
+            // We can use split because we always know that
+            // timestamp will be the first column & value will
+            // be the second column; always delimited by a comma.
+            // Also there will never be a header to skip.
+            let [timestamp, value] = row.trim().split(',');
+
+            // Convert data types & get derived variables
+            timestamp = DateTime.fromISO(timestamp);
+            value = Number(value);
+            const date = timestamp.startOf('day');
+            const key = date.valueOf();
+
+            // ?????
+            (acc[key] = acc[key] || []).push({
+                'timestamp': timestamp,
+                'date': date,
+                // 'time': time,
+                'value': value,
+            });
+        }
+
+        data = Object.entries(acc)
             .map(record => {
                 let date = record[1][0].date;
                 let min = Math.min(...record[1].map(_ => _.value));
@@ -132,7 +153,7 @@ export default class WeightView {
                     'test': record[1].map(_ => _.value)
                 }
             });
-        
+
         // let date = record.key;
         // let min = Math.min(...record.rows.weight);
         // let mean = Math.round(10* record.rows.weight.array().reduce((a,b) => a+b) / record.rows.length) / 10;
@@ -162,6 +183,18 @@ export default class WeightView {
         this.chart.data.datasets[2].data = weightDataMin;
         this.chart.update();
     }
+
+
+    /**
+     *
+     **/
+    async onPanZoomComplete({chart}) {
+        let min = DateTime.fromMillis(chart.options.scales.x.min)
+        let max = DateTime.fromMillis(chart.options.scales.x.max)
+        const margin = Math.round(max.diff(min).as('days'));
+        this.loadData(min.minus({days: margin}), max.plus({days: margin}));
+    }
+
     
     /**
      * Callback function Obsidian invokes to render HTML.
@@ -234,68 +267,23 @@ export default class WeightView {
                               pan: {
                                   enabled: true,
                                   mode: 'x',
+                                  onPanComplete: this.onPanZoomComplete.bind(this),
                               },
                               zoom: {
                                   wheel: {enabled: true, speed: 0.1, modifierKey: 'shift'},
                                   pinch: {enabled: true, speed: 0.1},
                                   mode: 'x',
-                                  onZoomComplete({chart}) {
-
-
-
-                                      let min = DateTime.fromMillis(chart.options.scales.x.min)
-                                      let max = DateTime.fromMillis(chart.options.scales.x.max)
-                                      let diff = Math.round(max.diff(min).as('days'))
-
-                                      // if (diff > 300) {
-                                      //     chart.options.scales.x.time.unit = 'year'
-                                      // } else if (diff > 90) {
-                                      //     chart.options.scales.x.time.unit = 'month'
-                                      // } else {
-                                      //     chart.options.scales.x.time.unit = 'day'
-                                      // }
-                                      // console.log(diff.as('days'))
-                                      chart.update('none');
-                                  },
+                                  onZoomComplete: this.onPanZoomComplete.bind(this),
                               },
                           },
                       }
                   },
         });
 
-        this.loadData();
+        this.loadData(DateTime.now().minus({weeks: 10}), DateTime.now().plus({days: 1}));
         this.app.vault.on('modify', file => {
-            if (file = this.logFile) this.loadData();
+            if (file = this.logFile) this.loadData(DateTime.now().minus({weeks: 2}), DateTime.now().plus({days: 1}));
         });
     }
 }
 
-
-export class ExampleModal extends Modal {
-  result: string;
-  onSubmit: (result: string) => void;
-
-  constructor(app: App, previousWeight, onSubmit: (result: string) => void) {
-    super(app);
-    this.onSubmit = onSubmit;
-    this.previousWeight = previousWeight;
-  }
-
-  onOpen() {
-    this.setTitle("Enter Weight");
-    const { contentEl } = this;
-    contentEl.createEl("input", {type: "number", cls: "weight-input", placeholder: this.previousWeight});
-    contentEl.addEventListener("keypress", _ => {
-        if (_.key == 'Enter') {
-            const value = contentEl.querySelector('input').value;
-            this.close();
-            if (value) this.onSubmit(Number(value).toFixed(1));
-        }
-    });
-  }
-
-  onClose() {
-    let { contentEl } = this;
-    contentEl.empty();
-  }
-}
