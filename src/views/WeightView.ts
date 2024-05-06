@@ -125,41 +125,37 @@ export default class WeightView {
             // Convert data types & get derived variables
             timestamp = DateTime.fromISO(timestamp);
             value = Number(value);
+
+            // TODO: switch on "groupBy" to determine the key
             const date = timestamp.startOf('day');
             const key = date.valueOf();
 
-            // ?????
-            (acc[key] = acc[key] || []).push({
-                'timestamp': timestamp,
-                'date': date,
-                // 'time': time,
-                'value': value,
-            });
-        }
-
-        data = Object.entries(acc)
-            .map(record => {
-                let date = record[1][0].date;
-                let min = Math.min(...record[1].map(_ => _.value));
-                let max = Math.max(...record[1].map(_ => _.value));
-                let mean = min+(max-min)/2;
-
-                return {
-                    'date': date,
-                    'mean': mean,
-                    'min': min,
-                    'max': max,
-                    'data': record[1],
-                    'test': record[1].map(_ => _.value)
+            // If this is the first time seeing this particular
+            // key, create a default record that we can update.
+            if (acc[key] == undefined) {
+                acc[key] = {
+                    'key': key,
+                    'min': Infinity,
+                    'max': -Infinity,
+                    'mean': 0,
+                    'count': 0,
+                    'values': [],
                 }
-            });
+            }
 
-        // let date = record.key;
-        // let min = Math.min(...record.rows.weight);
-        // let mean = Math.round(10* record.rows.weight.array().reduce((a,b) => a+b) / record.rows.length) / 10;
-        // let max = Math.max(...record.rows.weight);
+            // Update the various fields of the record
+            acc[key].min = Math.min(acc[key].min, value);
+            acc[key].max = Math.max(acc[key].max, value);
+            acc[key].values.push(value);
+            acc[key].count++;
+            acc[key].mean += (value-acc[key].mean)/acc[key].count;
+        }
+        data = Object.values(acc)
+
+        // TODO: time weighted average
         //
-        // // TODO: use a time weighted average
+        // let mean = Math.round(10* record.rows.weight.array().reduce((a,b) => a+b) / record.rows.length) / 10;
+        //
         // let sum = 0;
         // let test = record
         //     .rows
@@ -171,12 +167,9 @@ export default class WeightView {
         //     mean = sum / (test[test.length-1].timestamp.diff(test[0].timestamp))
         // }
 
-
-        // TODO: have multiple datasets so we can get smoother graphs (mean/min/max over larger time periods)
-        const weightDataLabels = data.map(_ => _.date)
-        const weightDataMax    = data.map(_ => ({'x': _.date, 'y': _.max}))
-        const weightDataMean   = data.map(_ => ({'x': _.date, 'y': _.mean}))
-        const weightDataMin    = data.map(_ => ({'x': _.date, 'y': _.min}))
+        const weightDataMax    = data.map(_ => ({'x': DateTime.fromMillis(_.key), 'y': _.max}))
+        const weightDataMean   = data.map(_ => ({'x': DateTime.fromMillis(_.key), 'y': _.mean}))
+        const weightDataMin    = data.map(_ => ({'x': DateTime.fromMillis(_.key), 'y': _.min}))
 
         this.chart.data.datasets[0].data = weightDataMean;
         this.chart.data.datasets[1].data = weightDataMax;
@@ -213,7 +206,6 @@ export default class WeightView {
         this.chart = new Chart(ctx, {
                   type: 'line',
                   data: {
-                      // labels: weightDataLabels,
                       datasets: [
                           {data: []},
                           {data: [], radius: 0, fill: '+1'},
