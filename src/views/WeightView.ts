@@ -7,14 +7,14 @@ import {
 
 import * as templates from '../templates';
 
-import { Eta } from 'eta';
-import Chart from 'chart.js/auto';
-import zoomPlugin from 'chartjs-plugin-zoom';
+import { DateTime } from 'luxon';
+import { Eta }      from 'eta';
+import { Chart }    from 'chart.js/auto';
+import zoomPlugin   from 'chartjs-plugin-zoom';
 import 'chartjs-adapter-luxon';
 
 Chart.register(zoomPlugin);
 
-import {DateTime} from 'luxon';
 
 
 /**
@@ -57,7 +57,7 @@ export default class WeightView {
             onOpen() {
                 this.setTitle("Enter Weight");
                 const { contentEl } = this;
-                contentEl.createEl("input", {type: "number", cls: "weight-input", placeholder: this.previousWeight});
+                const input = contentEl.createEl("input", {type: "number", cls: "weight-input", placeholder: this.previousWeight});
                 contentEl.addEventListener("keypress", _ => {
                     if (_.key == 'Enter') {
                         const value = contentEl.querySelector('input').value;
@@ -65,6 +65,7 @@ export default class WeightView {
                         if (value) this.onSubmit(Number(value).toFixed(1));
                     }
                 });
+                input.focus();
             }
 
             onClose() {
