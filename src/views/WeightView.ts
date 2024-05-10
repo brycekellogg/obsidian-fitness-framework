@@ -2,10 +2,8 @@ import {
     App,
     TFile,
     Modal,
-    Setting,
 } from 'obsidian';
 
-import * as templates from '../templates';
 
 import { DateTime } from 'luxon';
 import { Eta }      from 'eta';
@@ -13,36 +11,53 @@ import { Chart }    from 'chart.js/auto';
 import zoomPlugin   from 'chartjs-plugin-zoom';
 import 'chartjs-adapter-luxon';
 
-Chart.register(zoomPlugin);
+// ???
+import * as templates from '../templates';
 
 
 
-/**
- *
- *
- */
+
+//
+//
+//
+//
 export default class WeightView {
 
+	// For example, with a factor of 100:
+	//       0 < xRange < 100 => groupBy = 1
+	//     100 < xRange < 200 => groupBy = 2
+	//     200 < xRange < 300 => groupBy = 3
+	//
+	GROUP_BY_FACTOR = 100;
 
-    /**
-     *
-     *
-     **/
+	// ????
+	LOG_PATH = 'Health & Fitness/Logs/Weight.csv';
+
+	
+	// ???
+	//
+	//
+	//
     constructor(app, source: string, container: HTMLElement) {
+
+		// ???
+		Chart.register(zoomPlugin);
+		
         this.container = container;
         this.app = app;
-        this.logFile = this.app.vault.getAbstractFileByPath('Health & Fitness/Logs/Weight.csv') as TFile;
+        this.logFile = this.app.vault.getAbstractFileByPath(this.LOG_PATH) as TFile;
 
+		// ???
         this.eta = new Eta();
         this.eta.loadTemplate("@view", templates.WeightView);
         this.eta.loadTemplate("@add", templates.Add);
     }
 
 
-    /**
-     *
-     *
-     **/
+    //
+    //
+    //
+    //
     async handleAddClick(event:MouseEvent) {
 
         // ???
@@ -60,7 +75,7 @@ export default class WeightView {
                 const input = this.contentEl.createEl("input", {type: "number", cls: "weight-input"});
                 input.focus();
                 input.addEventListener("keypress", ({key, target}) => {
-                    if (key == 'Enter') {
+					if (key == 'Enter') {
                         this.app.vault.append(this.logFile, `${DateTime.now().toISO()},${target.value}\n`);
                         this.close();
                     }
@@ -74,26 +89,28 @@ export default class WeightView {
     }
 
 
-    /**
-     * TODO: we should cache somehow; only read in new data
-     *
-     *
-     **/
+    //
+    // TODO: we should cache somehow; only read in new data
+    //
+    //
+    //
     async loadData() {
 
         // ???
-        let min = DateTime.fromMillis(this.chart.options.scales.x.min)
-        let max = DateTime.fromMillis(this.chart.options.scales.x.max)
-        const margin = Math.round(max.diff(min).as('days'));
-        const groupBy = 1 + Math.floor(margin / 100);
+        const xMin = DateTime.fromMillis(this.chart.options.scales.x.min)
+        const xMax = DateTime.fromMillis(this.chart.options.scales.x.max)
+        const xRange = Math.round(xMax.diff(xMin).as('days'));
+		
+		// ???
+        const groupBy = 1 + Math.floor(xRange / this.GROUP_BY_FACTOR);
 
-        
-        const start = min.minus({days: margin});
+		// ???
+        const start = xMin.minus({days: xRange});
 
         // Read in log files into strings
         // & split into a list of records
         const dataString = (await this.app.vault.cachedRead(this.logFile));
-        let data = dataString.trim().split('\n');
+        let rows = dataString.trim().split('\n');
 
         // Find the starting record using binary search. Because
         // the timestamp is stored using ISO-8601, lexicographical
@@ -102,19 +119,22 @@ export default class WeightView {
         // array to ignore the unneeded earlier records.
         const needle = start.toISO();
         var index;
-        let upper = data.length-1;
+        let upper = rows.length-1;
         let lower = 0;
         while (lower <= upper) {
             index = Math.floor((upper+lower)/2);
-            upper = needle < data[index] ? index-1 : upper;
-            lower = needle > data[index] ? index+1 : lower;
+            upper = needle < rows[index] ? index-1 : upper;
+            lower = needle > rows[index] ? index+1 : lower;
         }
-        data = data.slice(index);
+        rows = rows.slice(index);
 
-        // Tansform data
+        // Process data from a list of strings into an object of the form:
+		// {
+		//     ['key']: {min: <float>, max: <float>, mean: <float>},
+		// }
         // ?????
-        let acc = {}
-        for (const row of data) {
+        let data = {}
+        for (const row of rows) {
 
             // Extract timestamp & value from "timestamp,value".
             // We can use split because we always know that
@@ -123,72 +143,69 @@ export default class WeightView {
             // Also there will never be a header to skip.
             let [timestamp, value] = row.trim().split(',');
 
-            // Convert data types & get derived variables
+            // Convert data types
             timestamp = DateTime.fromISO(timestamp);
             value = Number(value);
 
-            // TODO: switch on "groupBy" to determine the key
-            // timestamp.ordinal is 1-indexed, so we need to subtract by one
-            // or else dates show up one day later than expected
-            const date = Math.floor(timestamp.ordinal / groupBy)*groupBy - 1;
-            const key = timestamp.startOf('year').plus({days: date}).valueOf();
+            // Calculate "groupBy" key by using the "ordinal" (day of year)
+			// such that all days in a "group" result in a key equal to the
+			// first date in that group. For example: 
+			// 
+			//     |  Date   | Ordinal | key (groupBy=2) | key (groupBy=3) |
+			//     | Jan 1st |    1    |        1        |        1        |
+			// 	   | Jan 2nd |    2    |        1        |        1        |
+			// 	   | Jan 3rd |    3    |        3        |        1        |
+			// 	   | Jan 4th |    4    |        3        |        4        |
+			// 
+            // Note: timestamp.ordinal is 1-indexed, so we need to subtract by
+			//       one or else dates show up one day later than expected.
+            const days = Math.floor(timestamp.ordinal / groupBy)*groupBy - 1;
+            const key  = timestamp.startOf('year').plus({days: days}).valueOf();
 
-            // If this is the first time seeing this particular
-            // key, create a default record that we can update.
-            if (acc[key] == undefined) {
-                acc[key] = {
-                    lastTimestamp: timestamp,
-                    firstTimestamp: timestamp,
-                    lastValue: value,
+            if (data[key] == undefined) {
+
+				// If this is the first time seeing this particular
+				// key, create a default record that we can update.
+                data[key] = {
                     key: key,
                     min: value,
                     max: value,
-                    mean: value,
-                    count: 1,
-                    values: [value],
-                    weightedMean: value,
-                    weightedDt: 0,
+                    mean: value,           // weighted
+                    value: value,          // prev
+                    timestamp: timestamp,  // prev
+                    duration: 0,
                 }
             } else {
 
-                // Update the various fields of the record
-                acc[key].min = Math.min(acc[key].min, value);
-                acc[key].max = Math.max(acc[key].max, value);
-                acc[key].values.push(value);
-                acc[key].count++;
-                acc[key].mean += (value-acc[key].mean)/acc[key].count;
-
-                // Calculate time weighted mean
-                const dvi = (acc[key].lastValue + value) / 2;
-                const dti = timestamp.diff(acc[key].lastTimestamp).as('seconds');
-                
-                acc[key].weightedMean *= acc[key].weightedDt;
-                acc[key].weightedMean += dvi*dti;
-                acc[key].weightedDt += dti;
-                acc[key].weightedMean /= acc[key].weightedDt;
-
-                acc[key].lastValue = value;
-                acc[key].lastTimestamp = timestamp;
+                // Update calculation of min, max, & time weighted mean
+                const dt = timestamp.diff(data[key].timestamp).as('seconds');
+                data[key].mean *= data[key].duration;
+                data[key].mean += 0.5 * (data[key].value + value) * dt;
+                data[key].mean /= data[key].duration + dt;
+                data[key].duration += dt;
+                data[key].value = value;
+                data[key].timestamp = timestamp;
+                data[key].min = Math.min(data[key].min, value);
+                data[key].max = Math.max(data[key].max, value);
             }
         }
 
-        data = Object.values(acc)
-
-        this.chart.data.datasets[0].data = data.map(_ => ({'x': DateTime.fromMillis(_.key), 'y': _.max}));
-        this.chart.data.datasets[1].data = data.map(_ => ({'x': DateTime.fromMillis(_.key), 'y': _.weightedMean}));
-        this.chart.data.datasets[2].data = data.map(_ => ({'x': DateTime.fromMillis(_.key), 'y': _.min}));
+		// ???
+        this.chart.data.datasets[0].data = Object.values(data).map(_ => ({'x': _.key, 'y': _.max}));
+        this.chart.data.datasets[1].data = Object.values(data).map(_ => ({'x': _.key, 'y': _.mean}));
+        this.chart.data.datasets[2].data = Object.values(data).map(_ => ({'x': _.key, 'y': _.min}));
         this.chart.update();
     }
 
 
-    /**
-     * Callback function Obsidian invokes to render HTML.
-     *
-     * This function gets invoked by Obsidian each time a corresponding markdown
-     * code block with the correct "language" needs to be rendered. It is
-     * responsible for completely rendering the final look of the resulting
-     * HTML to show a line chart with historical weight data and an add button.
-     **/
+    //
+    // Callback function Obsidian invokes to render HTML.
+    //
+    // This function gets invoked by Obsidian each time a corresponding markdown
+    // code block with the correct "language" needs to be rendered. It is
+    // responsible for completely rendering the final look of the resulting
+    // HTML to show a line chart with historical weight data and an add button.
+    //
     async processMarkdown() {
 
         // Reload weight data if the log file changes.
