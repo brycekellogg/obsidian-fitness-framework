@@ -1,41 +1,47 @@
 
+// ???
 div.block-language-fitness-weight {
 	position: relative;
 	width: 100%;
+
+    // ???
+    div.chart-container {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 2/1;
+    }
+
+    // TODO: this doesn't show up when not in reading mode
+    div.add-button {
+        width: 2em;
+        height: 2em;
+        
+        background-color: var(--interactive-accent);
+        color:            var(--text-on-accent);
+
+        /* This positions the button above the chart, even with the header */
+        position: absolute;
+        top:  -32px;
+        right: 30px;
+        z-index: 100;
+        
+        cursor: pointer;
+        border-radius: 10px;
+        font-weight: bold;
+        
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    // ???
+    div.add-button:hover {
+        background-color: var(--interactive-accent-hover);
+    }
+
 }
 
-div.chart-container {
-	position: relative;
-	width: 100%;
-	aspect-ratio: 2/1;
-}
-
-div.add-button {
-	width: 2em;
-	height: 2em;
-	
-	background-color: var(--interactive-accent);
-	color:            var(--text-on-accent);
-
-	/* This positions the button above the chart, even with the header */
-	position: absolute;
-	top:  -32px;
-	right: 30px;
-	z-index: 100;
-	
-	cursor: pointer;
-	border-radius: 10px;
-	font-weight: bold;
-	
-	display: flex;
-	justify-content: center;
-	align-items: center;
-}
-
-div.add-button:hover {
-	background-color: var(--interactive-accent-hover);
-}
-
+// modals don't live inside the code block
 input.weight-input {
 	width: 100%;
 }
