@@ -30,6 +30,12 @@ export default class WeightView {
 	//
 	GROUP_BY_FACTOR = 100;
 
+	// A multiplicative factor of the xRange that
+	// determines how much additional data is loaded.
+	// A value of 1 means an additional 100% of the
+	// xRange.
+	ZOOM_MARGIN_FACTOR = 1
+
 	// ????
 	LOG_PATH = 'Health & Fitness/Logs/Weight.csv';
 
@@ -96,16 +102,16 @@ export default class WeightView {
     //
     async loadData() {
 
-        // ???
+        // Get values of the current min, max, & range of the X axis
         const xMin = DateTime.fromMillis(this.chart.options.scales.x.min)
         const xMax = DateTime.fromMillis(this.chart.options.scales.x.max)
         const xRange = Math.round(xMax.diff(xMin).as('days'));
 		
-		// ???
+		// Calculate the number of days to group
         const groupBy = 1 + Math.floor(xRange / this.GROUP_BY_FACTOR);
 
-		// ???
-        const start = xMin.minus({days: xRange});
+		// TODO: add an end and make this 50% of the total margin
+        const start = xMin.minus({days: xRange * this.ZOOM_MARGIN_FACTOR});
 
         // Read in log files into strings
         // & split into a list of records
@@ -129,10 +135,10 @@ export default class WeightView {
         rows = rows.slice(index);
 
         // Process data from a list of strings into an object of the form:
-		// {
-		//     ['key']: {min: <float>, max: <float>, mean: <float>},
-		// }
-        // ?????
+		//     {
+		//        ['key']: {min: <float>, max: <float>, mean: <float>},
+		//        ...
+		//     }
         let data = {}
         for (const row of rows) {
 
@@ -190,7 +196,7 @@ export default class WeightView {
             }
         }
 
-		// ???
+		// Set the chart data and request an update of the chart
         this.chart.data.datasets[0].data = Object.values(data).map(_ => ({'x': _.key, 'y': _.max}));
         this.chart.data.datasets[1].data = Object.values(data).map(_ => ({'x': _.key, 'y': _.mean}));
         this.chart.data.datasets[2].data = Object.values(data).map(_ => ({'x': _.key, 'y': _.min}));

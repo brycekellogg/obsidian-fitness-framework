@@ -4,10 +4,12 @@
     "description": "",
     "main": "main.js",
     "scripts": {
-        "dev": "node esbuild.config.mjs",
-        "build": "tsc -noEmit -skipLibCheck",
-        "bundle": "node esbuild.config.mjs production && cp -t ~/obsidian-vault/.obsidian/plugins/obsidian-fitness-framework/ main.js styles.css manifest.json",
-        "version": "node version-bump.mjs && git add manifest.json versions.json"
+		"build:ts":      "",
+        "build:css":     "lessc src/css/styles.less build/styles.css",
+		"build:bundle":  "node esbuild.config.mjs",
+        "install":       "cp -t $INSTALL_DIR build/* manifest.json",
+		"clean":         "rm -rf build/",
+		"all": "npm run build:css && npm run build:bundle && npm run install"
     },
     "keywords": [],
     "author": "",
@@ -27,8 +29,8 @@
         "chart.js": "^4.4.2",
         "chartjs-adapter-luxon": "^1.3.1",
         "chartjs-plugin-zoom": "^2.0.1",
-        "csv-parse": "^5.5.5",
         "eta": "^3.2.0",
+        "less": "^4.2.0",
         "luxon": "^3.4.4",
         "progressbar.js": "^1.1.1",
         "toml": "^3.0.0"
