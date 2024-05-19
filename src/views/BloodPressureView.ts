@@ -4,64 +4,44 @@ import {
     Modal,
 } from 'obsidian';
 
-
 import { DateTime } from 'luxon';
 import { Eta }      from 'eta';
 import { Chart }    from 'chart.js/auto';
 import zoomPlugin   from 'chartjs-plugin-zoom';
 import annotationPlugin from 'chartjs-plugin-annotation';
 import 'chartjs-adapter-luxon';
-
+import { Violin, ViolinController } from '@sgratzl/chartjs-chart-boxplot';
 // ???
 import * as templates from '../templates';
 
 
-
-
-//
-//
-//
-//
-export default class WeightView {
+export default class BloodPressureView {
 
 	// For example, with a factor of 100:
 	//       0 < xRange < 100 => groupBy = 1
 	//     100 < xRange < 200 => groupBy = 2
 	//     200 < xRange < 300 => groupBy = 3
 	//
-	GROUP_BY_FACTOR = 100;
-
-	// A multiplicative factor of the xRange that
-	// determines how much additional data is loaded.
-	// A value of 1 means an additional 100% of the
-	// xRange.
-	ZOOM_MARGIN_FACTOR = 1
-
-	// ????
-	LOG_PATH = 'Health & Fitness/Logs/Weight.csv';
-
+	GROUP_BY_FACTOR = 20;
 	
-	// ???
-	//
-	//
-	//
+    LOG_PATH = 'Health & Fitness/Logs/BloodPressure.csv';
+    
     constructor(app, source: string, container: HTMLElement) {
-
-		// ???
-		Chart.register(zoomPlugin);
+        
+        Chart.register(Violin, ViolinController);
         Chart.register(annotationPlugin);
-		
-        this.container = container;
-        this.app = app;
-        this.logFile = this.app.vault.getAbstractFileByPath(this.LOG_PATH) as TFile;
 
-		// ???
+        this.container = container;
+        this.app = app; 
+        this.logFile = this.app.vault.getAbstractFileByPath(this.LOG_PATH) as TFile;
+        
         this.eta = new Eta();
-        this.eta.loadTemplate("@view", templates.WeightView);
-        this.eta.loadTemplate("@add", templates.Add);
+        this.eta.loadTemplate("@view",  templates.BloodPressureView);
+        this.eta.loadTemplate("@modal", templates.BloodPressureModal);
+        this.eta.loadTemplate("@add",   templates.Add);
     }
 
-
+    
     //
     //
     //
@@ -72,19 +52,24 @@ export default class WeightView {
         new class extends Modal {
 
             // ???
-            constructor(app: App, logFile: TFile) {
+            constructor(app: App, eta: Eta, logFile: TFile) {
                 super(app);
                 this.logFile = logFile;
-                this.setTitle("Enter Weight");
+                this.eta = eta;
+                this.setTitle("Enter Blood Pressure");
             }
 
             // ???
             onOpen() {
-                const input = this.contentEl.createEl("input", {type: "number", cls: "weight-input"});
-                input.focus();
-                input.addEventListener("keypress", ({key, target}) => {
+                this.contentEl.innerHTML = this.eta.render("@modal", {});
+                const inputs = this.contentEl.querySelectorAll('input');
+                inputs[0].focus();
+                inputs[0].addEventListener("keyup", ({key, target}) => {
+                    if (target.value.length >= 3) inputs[1].focus();
+                });
+                inputs[1].addEventListener("keypress", ({key, target}) => {
 					if (key == 'Enter') {
-                        this.app.vault.append(this.logFile, `${DateTime.now().toISO()},${target.value}\n`);
+                        this.app.vault.append(this.logFile, `${DateTime.now().toISO()},${inputs[0].value},${inputs[1].value}\n`);
                         this.close();
                     }
                 });
@@ -93,17 +78,17 @@ export default class WeightView {
             // Gets called when we click "x" or press Esc
             onClose() { this.contentEl.empty() }
 
-        }(this.app, this.logFile).open();
+        }(this.app, this.eta, this.logFile).open();
     }
 
-
+    
     //
     // TODO: we should cache somehow; only read in new data
     //
     //
     //
     async loadData() {
-
+        
         // Get values of the current min, max, & range of the X axis
         const xMin = DateTime.fromMillis(this.chart.options.scales.x.min)
         const xMax = DateTime.fromMillis(this.chart.options.scales.x.max)
@@ -112,29 +97,10 @@ export default class WeightView {
 		// Calculate the number of days to group
         const groupBy = 1 + Math.floor(xRange / this.GROUP_BY_FACTOR);
 
-		// TODO: add an end and make this 50% of the total margin
-        const start = xMin.minus({days: xRange * this.ZOOM_MARGIN_FACTOR});
-
         // Read in log files into strings
         // & split into a list of records
         const dataString = (await this.app.vault.cachedRead(this.logFile));
         let rows = dataString.trim().split('\n');
-
-        // Find the starting record using binary search. Because
-        // the timestamp is stored using ISO-8601, lexicographical
-        // order equals chronological order, so we can compare
-        // strings directly. Once we find the start, slice the
-        // array to ignore the unneeded earlier records.
-        const needle = start.toISO();
-        var index;
-        let upper = rows.length-1;
-        let lower = 0;
-        while (lower <= upper) {
-            index = Math.floor((upper+lower)/2);
-            upper = needle < rows[index] ? index-1 : upper;
-            lower = needle > rows[index] ? index+1 : lower;
-        }
-        rows = rows.slice(index);
 
         // Process data from a list of strings into an object of the form:
 		//     {
@@ -143,17 +109,18 @@ export default class WeightView {
 		//     }
         let data = {}
         for (const row of rows) {
-
-            // Extract timestamp & value from "timestamp,value".
-            // We can use split because we always know that
-            // timestamp will be the first column & value will
-            // be the second column; always delimited by a comma.
-            // Also there will never be a header to skip.
-            let [timestamp, value] = row.trim().split(',');
+            
+            // Extract timestamp & values from "timestamp,systolic,diastolic".
+            // We can use split because we always know that timestamp will be
+            // the first column & systolic/diastolic will be the second/third
+            // columns; always delimited by a comma. Also there will never be
+            // a header to skip.
+            let [timestamp, systolic, diastolic] = row.trim().split(',');
 
             // Convert data types
             timestamp = DateTime.fromISO(timestamp);
-            value = Number(value);
+            systolic  = Number(systolic);
+            diastolic = Number(diastolic)
 
             // Calculate "groupBy" key by using the "ordinal" (day of year)
 			// such that all days in a "group" result in a key equal to the
@@ -176,43 +143,27 @@ export default class WeightView {
 				// key, create a default record that we can update.
                 data[key] = {
                     key: key,
-                    min: value,
-                    max: value,
-                    mean: value,           // weighted
-                    value: value,          // prev
-                    timestamp: timestamp,  // prev
-                    duration: 0,
+                    systolic:  [systolic],
+                    diastolic: [diastolic],
                 }
             } else {
 
                 // Update calculation of min, max, & time weighted mean
-                const dt = timestamp.diff(data[key].timestamp).as('seconds');
-                data[key].mean *= data[key].duration;
-                data[key].mean += 0.5 * (data[key].value + value) * dt;
-                data[key].mean /= data[key].duration + dt;
-                data[key].duration += dt;
-                data[key].value = value;
-                data[key].timestamp = timestamp;
-                data[key].min = Math.min(data[key].min, value);
-                data[key].max = Math.max(data[key].max, value);
+                data[key].systolic.push(systolic);
+                data[key].diastolic.push(diastolic);
             }
         }
 
 		// Set the chart data and request an update of the chart
-        this.chart.data.datasets[0].data = Object.values(data).map(_ => ({'x': _.key, 'y': _.max}));
-        this.chart.data.datasets[1].data = Object.values(data).map(_ => ({'x': _.key, 'y': _.mean}));
-        this.chart.data.datasets[2].data = Object.values(data).map(_ => ({'x': _.key, 'y': _.min}));
+        this.chart.data.datasets[0].data = Object.values(data).map(_ => _.systolic);
+        this.chart.data.datasets[1].data = Object.values(data).map(_ => _.diastolic);
+        this.chart.data.labels = Object.values(data).map(_ => _.key);
         this.chart.update();
     }
 
 
     //
-    // Callback function Obsidian invokes to render HTML.
     //
-    // This function gets invoked by Obsidian each time a corresponding markdown
-    // code block with the correct "language" needs to be rendered. It is
-    // responsible for completely rendering the final look of the resulting
-    // HTML to show a line chart with historical weight data and an add button.
     //
     async processMarkdown() {
 
@@ -225,7 +176,7 @@ export default class WeightView {
         // containing a reference to the file that was modified. We releat the
         // data only if it matches the actual weight logfile.
         this.app.vault.on('modify', (file:TAbstractFile) => (file == this.logFile) && this.loadData());
-
+        
         // Render the HTML contents of the container
         //
         // The HTML must include a <div> containing a <canvas> for the chart
@@ -236,7 +187,7 @@ export default class WeightView {
         // button. We use Eta's "include()" functionality to include the SVG
         // file directly.
         this.container.innerHTML = this.eta.render("@view", {});
-
+        
         // Register the click callback for the add button.
         //
         // Get a reference to the <div> that we are using as a button via its
@@ -245,38 +196,39 @@ export default class WeightView {
         this.container
             .querySelector('.add-button')
             .addEventListener("click", this.handleAddClick.bind(this));
-        
+
         // Define & configure a line chart for weight data
         this.chart = new Chart(this.container.querySelector('canvas'), {
-            type: 'line',
+            type: 'violin',
             data: {
+                labels: [],
                 datasets: [
-                    {label: 'max', radius: 0, fill: '+2'},
-                    {label: 'mean'},
-                    {label: 'min', radius: 0},
+                    {label: 'systolic',  medianBackgroundColor: "green", data: []},
+                    {label: 'diastolic', data: []},
                 ],
             },
             options: {
                 animations: false,  // https://www.chartjs.org/docs/latest/configuration/animations.html
-                elements: {         // https://www.chartjs.org/docs/3.9.1/configuration/elements.html
-                    line: {         // https://www.chartjs.org/docs/3.9.1/configuration/elements.html#line-configuration
-                        borderWidth: 1,
-                        tension: 0,  // zero means straight lines
-                        cubicInterpolationMode: 'monotone',
-                        borderColor: [
-                            'rgba(75, 192, 192, 0.10)',  // max
-                            'rgb(75, 192, 192)',         // mean
-                            'rgba(75, 192, 192, 0.10)',  // min
-                        ],
-                        backgroundColor: [
-                            'rgba(75, 192, 192, 0.10)',  // max
-                            'rgba(75, 192, 192, 0.10)',  // mean
-                            'rgba(75, 192, 192, 0.10)',  // min
-                        ],
-                    },
-                },
+                // elements: {         // https://www.chartjs.org/docs/3.9.1/configuration/elements.html
+                //     line: {         // https://www.chartjs.org/docs/3.9.1/configuration/elements.html#line-configuration
+                //         borderWidth: 1,
+                //         tension: 0,  // zero means straight lines
+                //         cubicInterpolationMode: 'monotone',
+                //         borderColor: [
+                //             'rgba(75, 192, 192, 0.10)',  // max
+                //             'rgb(75, 192, 192)',         // mean
+                //             'rgba(75, 192, 192, 0.10)',  // min
+                //         ],
+                //         backgroundColor: [
+                //             'rgba(75, 192, 192, 0.10)',  // max
+                //             'rgba(75, 192, 192, 0.10)',  // mean
+                //             'rgba(75, 192, 192, 0.10)',  // min
+                //         ],
+                //     },
+                // },
                 scales: {
                     x: {
+                        stacked: true,
                         type: 'time',
                         min: DateTime.now().minus({weeks: 2}).valueOf(),
                         max: DateTime.now().valueOf(),
@@ -285,6 +237,8 @@ export default class WeightView {
                         display: true,
                     },
                     y: {
+                        min: 60,
+                        // max: 140,
                         display: true,
                         ticks: { stepSize: 1 },                                        // only show whole pounds
                         afterDataLimits: scale => { scale.max += 1, scale.min -= 1 },  // add an offset to axis min/max
@@ -306,14 +260,30 @@ export default class WeightView {
                             onZoomComplete: _ => this.loadData(),
                         },
                     },
-                    tooltip: {
-                        usePointStyle: true,
-                        callbacks: {  // https://www.chartjs.org/docs/latest/configuration/tooltip.html#tooltip-callbacks
-                            title: ctx => ctx[0].raw.x.toLocaleString(DateTime.DATE_MED),
-                            label: ctx => `${ctx.dataset.label}:\t${Math.round(10 * ctx.raw.y)/10}`,
-                            labelPointStyle: ctx => ({pointStyle: false}),
+                    annotation: {
+                        annotations: {
+                            systolic: {
+                                type: 'line',
+                                borderColor: 'rgba(255, 0, 0, 0.25)',
+                                scaleID: 'y',
+                                value: 120,
+                            },
+                            diastolic: {
+                                type: 'line',
+                                borderColor: 'rgba(255, 0, 0, 0.25)',
+                                scaleID: 'y',
+                                value: 80,
+                            },
                         },
                     },
+                //     tooltip: {
+                //         usePointStyle: true,
+                //         callbacks: {  // https://www.chartjs.org/docs/latest/configuration/tooltip.html#tooltip-callbacks
+                //             title: ctx => ctx[0].raw.x.toLocaleString(DateTime.DATE_MED),
+                //             label: ctx => `${ctx.dataset.label}:\t${Math.round(10 * ctx.raw.y)/10}`,
+                //             labelPointStyle: ctx => ({pointStyle: false}),
+                //         },
+                //     },
                 },
             },
         });
@@ -322,4 +292,3 @@ export default class WeightView {
         this.loadData();
     }
 }
-

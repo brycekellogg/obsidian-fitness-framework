@@ -1,0 +1,5 @@
+<div class="modal-fitness-bloodpressure">
+    <input type="number", placeholder="systolic">
+    ∕
+    <input type="number", placeholder="diastolic">
+</div>

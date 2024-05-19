@@ -1,0 +1,6 @@
+<div class="add-button">
+    <%~ include("@add") %>
+</div>
+<div class="chart-container">
+    <canvas></canvas>
+</div>
