@@ -10,7 +10,9 @@ import { Chart }    from 'chart.js/auto';
 import zoomPlugin   from 'chartjs-plugin-zoom';
 import annotationPlugin from 'chartjs-plugin-annotation';
 import 'chartjs-adapter-luxon';
-import { Violin, ViolinController } from '@sgratzl/chartjs-chart-boxplot';
+
+import percentile from 'percentile';
+
 // ???
 import * as templates from '../templates';
 
@@ -22,13 +24,12 @@ export default class BloodPressureView {
 	//     100 < xRange < 200 => groupBy = 2
 	//     200 < xRange < 300 => groupBy = 3
 	//
-	GROUP_BY_FACTOR = 20;
+	GROUP_BY_FACTOR = 50;
 	
     LOG_PATH = 'Health & Fitness/Logs/BloodPressure.csv';
     
     constructor(app, source: string, container: HTMLElement) {
         
-        Chart.register(Violin, ViolinController);
         Chart.register(annotationPlugin);
 
         this.container = container;
@@ -92,10 +93,10 @@ export default class BloodPressureView {
         // Get values of the current min, max, & range of the X axis
         const xMin = DateTime.fromMillis(this.chart.options.scales.x.min)
         const xMax = DateTime.fromMillis(this.chart.options.scales.x.max)
-        const xRange = Math.round(xMax.diff(xMin).as('days'));
+        const xRange = xMax.diff(xMin).as('days');
 		
 		// Calculate the number of days to group
-        const groupBy = 1 + Math.floor(xRange / this.GROUP_BY_FACTOR);
+        const groupBy = 1 + Math.floor(Math.round(xRange) / this.GROUP_BY_FACTOR);
 
         // Read in log files into strings
         // & split into a list of records
@@ -134,7 +135,7 @@ export default class BloodPressureView {
 			// 
             // Note: timestamp.ordinal is 1-indexed, so we need to subtract by
 			//       one or else dates show up one day later than expected.
-            const days = Math.floor(timestamp.ordinal / groupBy)*groupBy - 1;
+            const days = (Math.floor(timestamp.ordinal / groupBy)*groupBy - 1) + groupBy/2 - 0.5;
             const key  = timestamp.startOf('year').plus({days: days}).valueOf();
 
             if (data[key] == undefined) {
@@ -143,21 +144,52 @@ export default class BloodPressureView {
 				// key, create a default record that we can update.
                 data[key] = {
                     key: key,
-                    systolic:  [systolic],
-                    diastolic: [diastolic],
+                    systolic: [systolic],
+                    diastolic:[diastolic],
                 }
             } else {
 
-                // Update calculation of min, max, & time weighted mean
+                // Save subsequent values for future processing
                 data[key].systolic.push(systolic);
                 data[key].diastolic.push(diastolic);
             }
         }
 
+        // Calculate median, percentiles, min, & max
+        data = Object.values(data).map(_ => {
+            const systolicPercentiles  = percentile([25, 75], _.systolic);
+            const diastolicPercentiles = percentile([25, 75], _.diastolic);
+            return {
+                key: _.key,
+                systolic: {
+                    min: Math.min(..._.systolic),
+                    p25: systolicPercentiles[0],
+                    mean: _.systolic.reduce((a,b) => a+b, 0)/_.systolic.length,
+                    p75: systolicPercentiles[1],
+                    max: Math.max(..._.systolic),
+                },
+                diastolic: {
+                    min: Math.min(..._.diastolic),
+                    p25: diastolicPercentiles[0],
+                    mean: _.diastolic.reduce((a,b) => a+b, 0)/_.diastolic.length,
+                    p75: diastolicPercentiles[1],
+                    max: Math.max(..._.diastolic),
+                },
+            };
+        });
+
 		// Set the chart data and request an update of the chart
-        this.chart.data.datasets[0].data = Object.values(data).map(_ => _.systolic);
-        this.chart.data.datasets[1].data = Object.values(data).map(_ => _.diastolic);
-        this.chart.data.labels = Object.values(data).map(_ => _.key);
+        this.chart.data.datasets[0].data = Object.values(data).map(_ => ({x: _.key, y: _.systolic.min}));
+        this.chart.data.datasets[1].data = Object.values(data).map(_ => ({x: _.key, y: _.systolic.p25}));
+        this.chart.data.datasets[2].data = Object.values(data).map(_ => ({x: _.key, y: _.systolic.mean}));
+        this.chart.data.datasets[3].data = Object.values(data).map(_ => ({x: _.key, y: _.systolic.p75}));
+        this.chart.data.datasets[4].data = Object.values(data).map(_ => ({x: _.key, y: _.systolic.max}));
+        this.chart.data.datasets[5].data = Object.values(data).map(_ => ({x: _.key, y: _.diastolic.min}));
+        this.chart.data.datasets[6].data = Object.values(data).map(_ => ({x: _.key, y: _.diastolic.p25}));
+        this.chart.data.datasets[7].data = Object.values(data).map(_ => ({x: _.key, y: _.diastolic.mean}));
+        this.chart.data.datasets[8].data = Object.values(data).map(_ => ({x: _.key, y: _.diastolic.p75}));
+        this.chart.data.datasets[9].data = Object.values(data).map(_ => ({x: _.key, y: _.diastolic.max}));
+
         this.chart.update();
     }
 
@@ -199,33 +231,44 @@ export default class BloodPressureView {
 
         // Define & configure a line chart for weight data
         this.chart = new Chart(this.container.querySelector('canvas'), {
-            type: 'violin',
+            type: 'line',
             data: {
                 labels: [],
                 datasets: [
-                    {label: 'systolic',  medianBackgroundColor: "green", data: []},
-                    {label: 'diastolic', data: []},
+                    {label: 'systolic min',   radius: 0, fill: '+4', data: []},
+                    {label: 'systolic 25%',   radius: 0, fill: '+2', data: []},
+                    {label: 'systolic median',  radius: 0, data: []},
+                    {label: 'systolic 75%',   radius: 0, data: []},
+                    {label: 'systolic max',   radius: 0, data: []},
+                    {label: 'diastolic min',   radius: 0, fill: '+4', data: []},
+                    {label: 'diastolic 25%',   radius: 0, fill: '+2', data: []},
+                    {label: 'diastolic median',  radius: 0, data: []},
+                    {label: 'diastolic 75%',   radius: 0, data: []},
+                    {label: 'diastolic max',   radius: 0, data: []},
                 ],
             },
             options: {
                 animations: false,  // https://www.chartjs.org/docs/latest/configuration/animations.html
-                // elements: {         // https://www.chartjs.org/docs/3.9.1/configuration/elements.html
-                //     line: {         // https://www.chartjs.org/docs/3.9.1/configuration/elements.html#line-configuration
-                //         borderWidth: 1,
-                //         tension: 0,  // zero means straight lines
-                //         cubicInterpolationMode: 'monotone',
-                //         borderColor: [
-                //             'rgba(75, 192, 192, 0.10)',  // max
-                //             'rgb(75, 192, 192)',         // mean
-                //             'rgba(75, 192, 192, 0.10)',  // min
-                //         ],
-                //         backgroundColor: [
-                //             'rgba(75, 192, 192, 0.10)',  // max
-                //             'rgba(75, 192, 192, 0.10)',  // mean
-                //             'rgba(75, 192, 192, 0.10)',  // min
-                //         ],
-                //     },
-                // },
+                elements: {         // https://www.chartjs.org/docs/3.9.1/configuration/elements.html
+                    line: {         // https://www.chartjs.org/docs/3.9.1/configuration/elements.html#line-configuration
+                        borderWidth: 1,
+                        borderColor: [
+                            'rgba(75, 192, 192, 0.10)',  // min
+                            'rgba(75, 192, 192, 0.10)',  // 25%
+                            'rgba(75, 192, 192, 0.90)',  // median
+                            'rgba(75, 192, 192, 0.10)',  // 75%
+                            'rgba(75, 192, 192, 0.10)',  // max
+                            
+                        ],
+                        backgroundColor: [
+                            'rgba(75, 192, 192, 0.10)',  // min
+                            'rgba(75, 192, 192, 0.20)',  // 25%
+                            'rgba(75, 192, 192, 0.90)',  // median
+                            'rgba(75, 192, 192, 0.20)',  // 75%
+                            'rgba(75, 192, 192, 0.10)',  // max
+                        ],
+                    },
+                },
                 scales: {
                     x: {
                         stacked: true,
@@ -238,7 +281,6 @@ export default class BloodPressureView {
                     },
                     y: {
                         min: 60,
-                        // max: 140,
                         display: true,
                         ticks: { stepSize: 1 },                                        // only show whole pounds
                         afterDataLimits: scale => { scale.max += 1, scale.min -= 1 },  // add an offset to axis min/max
@@ -287,6 +329,7 @@ export default class BloodPressureView {
                 },
             },
         });
+        this.chart.update();
 
         // Load the data for the first time after Markdown rendering
         this.loadData();
