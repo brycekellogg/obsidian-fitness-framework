@@ -1,0 +1,72 @@
+
+<!-- -->
+<div id="dashboard">
+	<div class="workout-not-started">
+		<div id="start" class="start-button button">
+			<%~ include("@play") %>
+			<span>START</span>
+		</div>
+	</div>
+</div>
+
+
+<!-- -->
+<div id="workout" class="workout-in-progress">
+
+	<!-- -->
+    <div class="header">
+		<div class="header-names">
+			<h1></h1>
+			<h3></h3>
+		</div>
+        <div class="button" id="close"><%~ include("@close") %></div>
+    </div>
+
+
+	<hr />
+
+
+	<!-- -->
+    <div class="workout-info">
+        <span>Sets: <%= it.setsTotal %></span>
+        <% if (it.timeTotal) { %><span>Time: <%= it.timeTotal %> seconds</span><% } %>
+        <% if (it.repsTotal) { %><span>Reps: <%= it.repsTotal %></span><% } %>
+    </div>
+
+
+	<!-- -->
+    <div class="progress">
+        <svg viewBox="0 0 100 100" style="display: block; width: 100%;">
+            <circle cx=50
+			        cy=50
+					r=40
+					fill="none"
+					stroke-width="2.5px"
+					stroke="green"/>
+            <circle cx=50 class="fg"
+			        cy=50
+					r=40
+					fill="none"
+					stroke-width="2.5px"
+					stroke="red"
+					>
+			<foreignobject x=25 y=25 width=50 height=50>
+				<div class="progress-content">
+					<span id="currentSet"></span>
+					<span id="currentTime"></span>
+					<span id="currentReps"></span>
+				</div>
+			</foreignobject>
+        </svg>
+    </div>
+
+
+	<!-- -->
+    <div class="controls">
+        <div class="button" id="prev">      <%~ include("@prev") %> </div>
+        <div class="button" id="play-pause"><%~ include("@play") %></div>
+        <div class="button" id="next">      <%~ include("@next") %></div>
+    </div>
+
+	
+</div>
