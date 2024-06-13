@@ -309,7 +309,7 @@ export default class WeightView {
                     tooltip: {
                         usePointStyle: true,
                         callbacks: {  // https://www.chartjs.org/docs/latest/configuration/tooltip.html#tooltip-callbacks
-                            title: ctx => ctx[0].raw.x.toLocaleString(DateTime.DATE_MED),
+                            title: ctx => DateTime.fromMillis(ctx[0].raw.x).toLocaleString(DateTime.DATE_MED),
                             label: ctx => `${ctx.dataset.label}:\t${Math.round(10 * ctx.raw.y)/10}`,
                             labelPointStyle: ctx => ({pointStyle: false}),
                         },

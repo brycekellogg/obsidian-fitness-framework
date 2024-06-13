@@ -24,7 +24,7 @@ export default class BloodPressureView {
 	//     100 < xRange < 200 => groupBy = 2
 	//     200 < xRange < 300 => groupBy = 3
 	//
-	GROUP_BY_FACTOR = 50;
+	GROUP_BY_FACTOR = 100;
 	
     LOG_PATH = 'Health & Fitness/Logs/BloodPressure.csv';
     
